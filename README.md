@@ -5,20 +5,21 @@ This is a containerized ROS communication bridge for the F1TENTH gym environment
 
 **Supported System:**
 
-- Ubuntu (tested on 20.04) native with ROS 2
-- Ubuntu (tested on 20.04) with an NVIDIA gpu and nvidia-docker2 support
+- Ubuntu native with ROS 2 Jazzy
+- Ubuntu with ROS 2 Jazzy, an NVIDIA gpu, and nvidia-docker2 support
 - Windows 10, macOS, and Ubuntu without an NVIDIA gpu (using noVNC)
 
 This installation guide will be split into instruction for installing the ROS 2 package natively, and for systems with or without an NVIDIA gpu in Docker containers.
 
-## Native on Ubuntu 20.04
+## Native on Ubuntu 22.04
 
 **Install the following dependencies:**
-- **ROS 2** Follow the instructions [here](https://docs.ros.org/en/foxy/Installation.html) to install ROS 2 Foxy.
+- **ROS 2** Follow the instructions [here](https://docs.ros.org/en/jazzy/Installation.html) to install ROS 2 Jazzy.
 - **F1TENTH Gym**
+  Install this repository's Gymnasium-compatible `f110_gym` package first:
   ```bash
-  git clone https://github.com/f1tenth/f1tenth_gym
-  cd f1tenth_gym && pip3 install -e .
+  cd <path-to-f1tenth_gym_jl>
+  pip3 install -e .
   ```
 
 **Installing the simulation:**
@@ -26,15 +27,15 @@ This installation guide will be split into instruction for installing the ROS 2 
 - Clone the repo into the workspace:
   ```bash
   cd $HOME/sim_ws/src
-  git clone https://github.com/f1tenth/f1tenth_gym_ros
+  ln -s <path-to-f1tenth_gym_jl>/thirdparty/f1tenth_gym_ros f1tenth_gym_ros
   ```
 - Update correct parameter for path to map file:
-  Go to `sim.yaml` [https://github.com/f1tenth/f1tenth_gym_ros/blob/main/config/sim.yaml](https://github.com/f1tenth/f1tenth_gym_ros/blob/main/config/sim.yaml) in your cloned repo, change the `map_path` parameter to point to the correct location. It should be `'<your_home_dir>/sim_ws/src/f1tenth_gym_ros/maps/levine'`
+  Go to `config/sim.yaml` in your cloned repo and change the `map_path` parameter to point to the correct location. It should be `'<your_home_dir>/sim_ws/src/f1tenth_gym_ros/maps/levine'`
 - Install dependencies with rosdep:
   ```bash
-  source /opt/ros/foxy/setup.bash
+  source /opt/ros/jazzy/setup.bash
   cd ..
-  rosdep install -i --from-path src --rosdistro foxy -y
+  rosdep install -i --from-path src --rosdistro jazzy -y
   ```
 - Build the workspace: ```colcon build```
 
@@ -46,17 +47,27 @@ This installation guide will be split into instruction for installing the ROS 2 
 - **nvidia-docker2**, follow the instructions [here](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) if you have a support GPU. It is also possible to use Intel integrated graphics to forward the display, see details instructions from the Rocker repo. If you are on windows with an NVIDIA GPU, you'll have to use WSL (Windows Subsystem for Linux). Please refer to the guide [here](https://developer.nvidia.com/cuda/wsl), [here](https://docs.nvidia.com/cuda/wsl-user-guide/index.html), and [here](https://dilililabs.com/zh/blog/2021/01/26/deploying-docker-with-gpu-support-on-windows-subsystem-for-linux/).
 - **rocker** [https://github.com/osrf/rocker](https://github.com/osrf/rocker). This is a tool developed by OSRF to run Docker images with local support injected. We use it for GUI forwarding. If you're on Windows, WSL should also support this.
 
+GPU support requires the NVIDIA Container Toolkit on the host. The Dockerfile
+sets NVIDIA runtime defaults and installs OpenGL diagnostic tools, but Docker
+still injects GPU devices only at runtime through `rocker --nvidia`,
+`docker run --gpus all`, or the `gpus: all` setting in `docker-compose.yml`.
+
 **Installing the simulation:**
 
-1. Clone this repo
+1. Clone this repository with submodules.
 2. Build the docker image by:
 ```bash
-$ cd f1tenth_gym_ros
-$ docker build -t f1tenth_gym_ros -f Dockerfile .
+$ cd f1tenth_gym_jl
+$ docker build -t f1tenth_gym_ros -f thirdparty/f1tenth_gym_ros/Dockerfile .
 ```
-3. To run the containerized environment, start a docker container by running the following. (example showned here with nvidia-docker support). By running this, the current directory that you're in (should be `f1tenth_gym_ros`) is mounted in the container at `/sim_ws/src/f1tenth_gym_ros`. Which means that the changes you make in the repo on the host system will also reflect in the container.
+The Dockerfile installs `f110_gym` from the local repository build context, not
+from an upstream clone.
+3. To run the containerized environment, start a docker container by running the following. (example showned here with nvidia-docker support). By running this, the current repository is mounted in the container at `/opt/f1tenth_gym_jl`, and the ROS bridge is mounted at `/sim_ws/src/f1tenth_gym_ros`.
 ```bash
-$ rocker --nvidia --x11 --volume .:/sim_ws/src/f1tenth_gym_ros -- f1tenth_gym_ros
+$ rocker --nvidia --x11 \
+  --volume .:/opt/f1tenth_gym_jl \
+  --volume ./thirdparty/f1tenth_gym_ros:/sim_ws/src/f1tenth_gym_ros \
+  -- f1tenth_gym_ros
 ```
 
 ## Without an NVIDIA gpu:
@@ -69,11 +80,15 @@ If your system does not support nvidia-docker2, noVNC will have to be used to fo
 
 **Installing the simulation:**
 
-1. Clone this repo 
+1. Clone this repo
 2. Bringup the novnc container and the sim container with docker-compose:
 ```bash
-docker-compose up
-``` 
+docker-compose -f thirdparty/f1tenth_gym_ros/docker-compose.yml up
+```
+The compose file requests all NVIDIA GPUs with `gpus: all`; the image already
+sets the NVIDIA visibility and driver-capability defaults in the Dockerfile. If
+your Docker Compose version does not support `gpus: all`, use the
+`rocker --nvidia` command above instead.
 3. In a separate terminal, run the following, and you'll have the a bash session in the simulation container. `tmux` is available for convenience.
 ```bash
 docker exec -it f1tenth_gym_ros-sim-1 /bin/bash
@@ -85,7 +100,7 @@ docker exec -it f1tenth_gym_ros-sim-1 /bin/bash
 1. `tmux` is included in the contianer, so you can create multiple bash sessions in the same terminal.
 2. To launch the simulation, make sure you source both the ROS2 setup script and the local workspace setup script. Run the following in the bash session from the container:
 ```bash
-$ source /opt/ros/foxy/setup.bash
+$ source /opt/ros/jazzy/setup.bash
 $ source install/local_setup.bash
 $ ros2 launch f1tenth_gym_ros gym_bridge_launch.py
 ```

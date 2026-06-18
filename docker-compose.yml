@@ -24,16 +24,20 @@ version: '3'
 services:
   sim:
     image: f1tenth_gym_ros
-    build: ./
-    volumes: 
+    build:
+      context: ../..
+      dockerfile: thirdparty/f1tenth_gym_ros/Dockerfile
+    volumes:
+      - ../..:/opt/f1tenth_gym_jl
       - .:/sim_ws/src/f1tenth_gym_ros
     environment:
       - DISPLAY=novnc:0.0
+    gpus: all
     networks:
       - x11
     stdin_open: true
-    tty: true 
-  novnc:  
+    tty: true
+  novnc:
     image: theasp/novnc:latest
     environment:
       - DISPLAY_WIDTH=1728
